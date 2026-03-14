@@ -1,89 +1,134 @@
-# CUSAT Smart Campus  
-### Digital Library Seat Management System
+# CUSAT Smart Campus
+
+## Digital Library Seat Management System
+
+## Project Overview
+
+CUSAT Smart Campus is a Flutter-based mobile application designed to improve library seat management at Cochin University of Science and Technology (CUSAT).
+
+The application allows students to scan a QR code inside the library, view available seats in real time, and reserve a seat for a limited duration. When the session timer expires, the system automatically checks out the student and releases the seat so that others can use it.
+
+This system helps prevent seat blocking and ensures fair usage of library resources.
 
 ---
 
-## 📌 Project Overview
+## Objectives
 
-CUSAT Smart Campus is a Flutter-based mobile application designed to optimize library seat management at Cochin University of Science and Technology (CUSAT).
-
-The application enables students to scan a QR code inside the library, reserve available seats, and automatically start a timed session. Once the session expires, the system automatically checks out the student and releases the seat.
-
-This ensures fair usage, prevents seat blocking, and improves overall resource efficiency.
-
----
-
-## 🎯 Objectives
-
-- Ensure fair and transparent seat allocation  
-- Prevent long-duration seat blocking  
-- Enable real-time seat availability tracking  
-- Automate seat checkout after usage  
-- Digitally streamline campus resource management  
+* Ensure fair and transparent seat allocation
+* Prevent long-duration seat blocking
+* Provide real-time seat availability tracking
+* Automate seat checkout after usage
+* Digitize campus resource management
 
 ---
 
-## 👥 User Roles
+## User Roles
 
-### 🎓 Student
-- Secure login authentication  
-- Access personalized dashboard  
-- Scan QR code inside library  
-- View real-time available seats  
-- Select and reserve a seat  
-- Automatic timer activation  
-- Auto checkout when timer expires  
+### Student
 
-### 👨‍🏫 Faculty
-- Secure login  
-- Access faculty dashboard  
-- Future scope: Monitoring and administrative controls  
+* Secure login authentication
+* Access personal dashboard
+* Scan QR code inside the library
+* View available seats in real time
+* Select and reserve a seat
+* Automatic session timer
+* Auto checkout when timer expires
 
----
+### Faculty
 
-## ✨ Core Features
-
-- Role-based authentication (Student / Faculty)
-- QR code–based library verification
-- Real-time seat availability system
-- Automated timer-based seat allocation
-- Automatic seat release after timer expiry
-- Secure backend integration using Firebase
+* Secure login authentication
+* Access faculty dashboard
+* Future scope: monitoring and administrative controls
 
 ---
 
-## ⚙️ System Workflow
+## Core Features
 
-1. User logs into the application  
-2. Navigates to the Library section  
-3. Scans the QR code placed inside the library  
-4. Available seats are fetched from the database  
-5. User selects a seat  
-6. Timer starts automatically  
-7. On timer expiry:
-   - User is automatically checked out  
-   - Seat status is updated to available  
+* Role-based authentication (Student / Faculty)
+* QR code-based library verification
+* Real-time seat availability
+* Automated timer-based seat allocation
+* Automatic seat release after session expiry
+* Secure backend integration using Supabase
 
 ---
 
-## 🛠️ Technology Stack
+## System Workflow
+
+1. User logs into the application
+2. User navigates to the library section
+3. User scans the QR code placed inside the library
+4. Application retrieves available seats from the database
+5. User selects a seat
+6. A timer automatically starts
+7. When the timer expires:
+
+   * The user is automatically checked out
+   * The seat status is updated to available
+
+---
+
+## Technology Stack
 
 ### Frontend
-- Flutter  
-- Dart  
+
+* Flutter
+* Dart
 
 ### Backend
-- Supabase
+
+* Supabase
 
 ### Integrations
-- QR Code Scanner Package  
-- Session & Timer Management Logic  
+
+* QR Code Scanner package
+* Session and timer management logic
 
 ---
 
-How to run this project:
--git clone github.com/Sruthindev-R-S/cusatify
-Go to project Root,Requires flutter and dart download and setup it
--To download dependencies: flutter pub get
-Select device and Run using :flutter run
+## Installation
+
+### Clone the repository
+
+```
+git clone https://github.com/Sruthindev-R-S/cusatify.git
+```
+
+### Navigate to project directory
+
+```
+cd cusatify
+```
+
+### Install dependencies
+
+```
+flutter pub get
+```
+
+### Run the project
+
+```
+flutter run
+```
+
+---
+
+## Requirements
+
+* Flutter SDK
+* Dart SDK
+* Android Studio or VS Code
+* Android emulator or physical device
+
+---
+
+## Future Improvements
+
+* Admin dashboard for library monitoring
+* Seat usage analytics
+* Push notifications for session expiry
+* Multi-library support
+
+---
 
