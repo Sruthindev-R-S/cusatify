@@ -73,9 +73,7 @@ This ensures fair usage, prevents seat blocking, and improves overall resource e
 - Dart  
 
 ### Backend
-- Firebase Authentication  
-- Cloud Firestore  
-- Firebase Realtime Database (if used)
+- Supabase
 
 ### Integrations
 - QR Code Scanner Package  
@@ -83,5 +81,9 @@ This ensures fair usage, prevents seat blocking, and improves overall resource e
 
 ---
 
-## 📂 Project Structure
+How to run this project:
+-git clone github.com/Sruthindev-R-S/cusatify
+Go to project Root,Requires flutter and dart download and setup it
+-To download dependencies: flutter pub get
+Select device and Run using :flutter run
 
