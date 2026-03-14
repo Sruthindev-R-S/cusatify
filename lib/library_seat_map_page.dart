@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'main.dart';
 import 'library_session_page.dart';
 
 /// Displays 30 library seats in real-time.
@@ -26,12 +26,33 @@ class LibrarySeatMapPage extends StatefulWidget {
 class _LibrarySeatMapPageState extends State<LibrarySeatMapPage> {
   static const int totalSeats = 30;
   int? _selectedSeat; // tapped seat index (0-based)
+  Set<int> _occupiedIndexes = {};
 
   bool get isSelectionMode => widget.studentUid != null && widget.studentData != null;
 
+  @override
+  void initState() {
+    super.initState();
+    // Listen for real-time seat updates
+    supabase
+        .from('library_logs')
+        .stream(primaryKey: ['id'])
+        .eq('status', 'checked_in')
+        .listen((data) {
+      if (mounted) {
+        final indexes = <int>{};
+        for (final doc in data) {
+          final sn = doc['seat_number'];
+          if (sn != null) indexes.add((sn as int) - 1);
+        }
+        setState(() => _occupiedIndexes = indexes);
+      }
+    });
+  }
+
   // ── Confirm & Check In ──────────────────────────────────────────────────────
-  Future<void> _confirmSeat(int seatIndex, Set<int> occupiedIndexes) async {
-    if (occupiedIndexes.contains(seatIndex)) return;
+  Future<void> _confirmSeat(int seatIndex) async {
+    if (_occupiedIndexes.contains(seatIndex)) return;
 
     final seatNumber = seatIndex + 1;
     final uid = widget.studentUid!;
@@ -39,18 +60,19 @@ class _LibrarySeatMapPageState extends State<LibrarySeatMapPage> {
     final now = DateTime.now();
 
     // Create the library_log entry
-    final logRef = await FirebaseFirestore.instance.collection("library_logs").add({
-      "uid": uid,
-      "name": studentData["name"],
-      "studentId": studentData["studentId"],
-      "department": studentData["department"],
-      "semester": studentData["semester"],
-      "seatNumber": seatNumber,
-      "timestamp": FieldValue.serverTimestamp(),
-      "date": "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}",
-      "time": "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}",
-      "status": "checked_in",
-    });
+    final result = await supabase.from('library_logs').insert({
+      'uid': uid,
+      'name': studentData['name'],
+      'student_id': studentData['student_id'],
+      'department': studentData['department'],
+      'semester': studentData['semester'],
+      'seat_number': seatNumber,
+      'date': "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}",
+      'time': "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}",
+      'status': 'checked_in',
+    }).select('id').single();
+
+    final logId = result['id'].toString();
 
     if (!mounted) return;
 
@@ -59,7 +81,7 @@ class _LibrarySeatMapPageState extends State<LibrarySeatMapPage> {
       context,
       MaterialPageRoute(
         builder: (_) => LibrarySessionPage(
-          logId: logRef.id,
+          logId: logId,
           seatNumber: seatNumber,
         ),
       ),
@@ -70,9 +92,9 @@ class _LibrarySeatMapPageState extends State<LibrarySeatMapPage> {
   }
 
   // ── Seat-tap handler ────────────────────────────────────────────────────────
-  void _onSeatTap(int index, Set<int> occupiedIndexes) {
+  void _onSeatTap(int index) {
     if (!isSelectionMode) return;
-    if (occupiedIndexes.contains(index)) return;
+    if (_occupiedIndexes.contains(index)) return;
 
     setState(() => _selectedSeat = index);
 
@@ -85,7 +107,7 @@ class _LibrarySeatMapPageState extends State<LibrarySeatMapPage> {
         seatNumber: seatNumber,
         onConfirm: () {
           Navigator.pop(context); // close sheet
-          _confirmSeat(index, occupiedIndexes);
+          _confirmSeat(index);
         },
         onCancel: () {
           Navigator.pop(context);
@@ -97,6 +119,9 @@ class _LibrarySeatMapPageState extends State<LibrarySeatMapPage> {
 
   @override
   Widget build(BuildContext context) {
+    final occupied = _occupiedIndexes.length;
+    final available = (totalSeats - occupied).clamp(0, totalSeats);
+
     return Scaffold(
       backgroundColor: const Color(0xFFFAF7EB),
       appBar: AppBar(
@@ -108,143 +133,122 @@ class _LibrarySeatMapPageState extends State<LibrarySeatMapPage> {
         ),
         centerTitle: true,
       ),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection("library_logs")
-            .where("status", isEqualTo: "checked_in")
-            .snapshots(),
-        builder: (context, snapshot) {
-          // Get occupied seat indexes (0-based) from Firestore
-          final Set<int> occupiedIndexes = {};
-          if (snapshot.hasData) {
-            for (final doc in snapshot.data!.docs) {
-              final data = doc.data() as Map<String, dynamic>;
-              final sn = data["seatNumber"];
-              if (sn != null) occupiedIndexes.add((sn as int) - 1);
-            }
-          }
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            // ── Stats banner ───────────────────────────────────────
+            _StatsBanner(total: totalSeats, occupied: occupied, available: available),
 
-          final occupied = occupiedIndexes.length;
-          final available = (totalSeats - occupied).clamp(0, totalSeats);
+            const SizedBox(height: 20),
 
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
+            // ── Instruction chip ──────────────────────────────────
+            if (isSelectionMode)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF5D1F1E).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  "Tap a green seat to select it",
+                  style: TextStyle(
+                    color: Color(0xFF5D1F1E),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+
+            const SizedBox(height: 16),
+
+            // ── Legend ─────────────────────────────────────────────
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // ── Stats banner ───────────────────────────────────────
-                _StatsBanner(total: totalSeats, occupied: occupied, available: available),
-
-                const SizedBox(height: 20),
-
-                // ── Instruction chip ──────────────────────────────────
-                if (isSelectionMode)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF5D1F1E).withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Text(
-                      "Tap a green seat to select it",
-                      style: TextStyle(
-                        color: Color(0xFF5D1F1E),
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-
-                const SizedBox(height: 16),
-
-                // ── Legend ─────────────────────────────────────────────
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _LegendDot(color: Colors.green.shade400, label: "Available"),
-                    const SizedBox(width: 20),
-                    _LegendDot(color: Colors.red.shade400, label: "Occupied"),
-                    if (isSelectionMode) ...[
-                      const SizedBox(width: 20),
-                      _LegendDot(color: Colors.amber.shade600, label: "Selected"),
-                    ],
-                  ],
-                ),
-
-                const SizedBox(height: 22),
-
-                // ── Seat grid ──────────────────────────────────────────
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 5,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 0.85,
-                  ),
-                  itemCount: totalSeats,
-                  itemBuilder: (context, index) {
-                    final isOccupied = occupiedIndexes.contains(index);
-                    final isSelected = _selectedSeat == index;
-
-                    Color color;
-                    if (isSelected) {
-                      color = Colors.amber.shade600;
-                    } else if (isOccupied) {
-                      color = Colors.red.shade400;
-                    } else {
-                      color = Colors.green.shade400;
-                    }
-
-                    return GestureDetector(
-                      onTap: () => _onSeatTap(index, occupiedIndexes),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeInOut,
-                        decoration: BoxDecoration(
-                          color: color.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: color.withValues(alpha: isSelected ? 1.0 : 0.45),
-                            width: isSelected ? 2.5 : 1.5,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: color.withValues(alpha: 0.18),
-                              blurRadius: 6,
-                              offset: const Offset(0, 3),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              isOccupied ? Icons.event_seat : Icons.chair_alt,
-                              color: color,
-                              size: 26,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              "${index + 1}",
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w800,
-                                color: color,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-
-                const SizedBox(height: 30),
+                _LegendDot(color: Colors.green.shade400, label: "Available"),
+                const SizedBox(width: 20),
+                _LegendDot(color: Colors.red.shade400, label: "Occupied"),
+                if (isSelectionMode) ...[
+                  const SizedBox(width: 20),
+                  _LegendDot(color: Colors.amber.shade600, label: "Selected"),
+                ],
               ],
             ),
-          );
-        },
+
+            const SizedBox(height: 22),
+
+            // ── Seat grid ──────────────────────────────────────────
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 5,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 0.85,
+              ),
+              itemCount: totalSeats,
+              itemBuilder: (context, index) {
+                final isOccupied = _occupiedIndexes.contains(index);
+                final isSelected = _selectedSeat == index;
+
+                Color color;
+                if (isSelected) {
+                  color = Colors.amber.shade600;
+                } else if (isOccupied) {
+                  color = Colors.red.shade400;
+                } else {
+                  color = Colors.green.shade400;
+                }
+
+                return GestureDetector(
+                  onTap: () => _onSeatTap(index),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: color.withValues(alpha: isSelected ? 1.0 : 0.45),
+                        width: isSelected ? 2.5 : 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: color.withValues(alpha: 0.18),
+                          blurRadius: 6,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          isOccupied ? Icons.event_seat : Icons.chair_alt,
+                          color: color,
+                          size: 26,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          "${index + 1}",
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: color,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+
+            const SizedBox(height: 30),
+          ],
+        ),
       ),
     );
   }

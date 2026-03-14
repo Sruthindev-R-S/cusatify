@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'main.dart';
 
 class AssignmentsPage extends StatefulWidget {
   const AssignmentsPage({super.key});
@@ -21,25 +20,24 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   }
 
   Future<void> loadData() async {
-    final uid = FirebaseAuth.instance.currentUser!.uid;
-    final studentDoc = await FirebaseFirestore.instance
-        .collection("students")
-        .doc(uid)
-        .get();
+    final uid = supabase.auth.currentUser!.id;
+    final studentDoc = await supabase
+        .from('students')
+        .select()
+        .eq('uid', uid)
+        .single();
 
-    semester = studentDoc.data()?["semester"] ?? "1";
+    semester = studentDoc["semester"] ?? "1";
 
-    final query = await FirebaseFirestore.instance
-        .collection("assignments")
-        .where("semester", isEqualTo: semester)
-        .orderBy("dueDate", descending: false)
-        .get();
+    final result = await supabase
+        .from('assignments')
+        .select()
+        .eq('semester', semester!)
+        .order('due_date', ascending: true);
 
     if (mounted) {
       setState(() {
-        assignments = query.docs
-            .map((d) => {"id": d.id, ...d.data()})
-            .toList();
+        assignments = (result as List).cast<Map<String, dynamic>>();
         loading = false;
       });
     }
@@ -120,7 +118,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                             ),
                           ),
                           Text(
-                            a["dueDate"] ?? "",
+                            a["due_date"] ?? "",
                             style: const TextStyle(
                               color: Color(0xFF5D1F1E),
                               fontWeight: FontWeight.w600,

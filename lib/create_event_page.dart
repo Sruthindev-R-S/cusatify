@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'main.dart';
 
 class CreateEventPage extends StatefulWidget {
   const CreateEventPage({super.key});
@@ -49,12 +48,13 @@ class _CreateEventPageState extends State<CreateEventPage> {
 
     setState(() => submitting = true);
 
-    final uid = FirebaseAuth.instance.currentUser!.uid;
-    final facultyDoc = await FirebaseFirestore.instance
-        .collection("faculty")
-        .doc(uid)
-        .get();
-    final facultyName = facultyDoc.data()?["facultyName"] ?? "Faculty";
+    final uid = supabase.auth.currentUser!.id;
+    final facultyData = await supabase
+        .from('faculty')
+        .select('faculty_name')
+        .eq('uid', uid)
+        .single();
+    final facultyName = facultyData['faculty_name'] ?? 'Faculty';
 
     final dateStr =
         "${selectedDate!.year}-${selectedDate!.month.toString().padLeft(2, '0')}-${selectedDate!.day.toString().padLeft(2, '0')}";
@@ -62,15 +62,14 @@ class _CreateEventPageState extends State<CreateEventPage> {
         ? "${selectedTime!.hour.toString().padLeft(2, '0')}:${selectedTime!.minute.toString().padLeft(2, '0')}"
         : "";
 
-    await FirebaseFirestore.instance.collection("events").add({
-      "title": titleCtrl.text,
-      "description": descCtrl.text,
-      "venue": venueCtrl.text,
-      "date": dateStr,
-      "time": timeStr,
-      "createdBy": uid,
-      "createdByName": facultyName,
-      "createdAt": FieldValue.serverTimestamp(),
+    await supabase.from('events').insert({
+      'title': titleCtrl.text,
+      'description': descCtrl.text,
+      'venue': venueCtrl.text,
+      'date': dateStr,
+      'time': timeStr,
+      'created_by': uid,
+      'created_by_name': facultyName,
     });
 
     if (!mounted) return;

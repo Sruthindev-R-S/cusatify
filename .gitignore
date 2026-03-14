@@ -43,3 +43,34 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Sensitive files
+android/app/google-services.json
+ios/GoogleService-Info.plist
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+supabase/.env*
+
+# Generated files
+lib/generated/
+lib/generated_bindings/
+lib/l10n/
+
+# VS Code
+.vscode/launch.json
+.vscode/settings.json
+.vscode/extensions.json
+
+# macOS
+*.xcarchive
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+
+# Lock files (optional - uncomment if needed for consistency across team)
+# pubspec.lock
+
+# Local test/debug files
+test_db_connection.dart

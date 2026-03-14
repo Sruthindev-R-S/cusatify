@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'main.dart';
 
 class LibrarySessionPage extends StatefulWidget {
-  final String logId; // the library_logs document ID for this check-in
+  final String logId; // the library_logs row ID for this check-in
   final int seatNumber;
 
   const LibrarySessionPage({super.key, required this.logId, required this.seatNumber});
@@ -61,13 +61,12 @@ class _LibrarySessionPageState extends State<LibrarySessionPage> {
     _timer?.cancel();
 
     // Update the library_logs entry to checked_out
-    await FirebaseFirestore.instance
-        .collection("library_logs")
-        .doc(widget.logId)
+    await supabase
+        .from('library_logs')
         .update({
-      "status": "checked_out",
-      "checkOutTime": FieldValue.serverTimestamp(),
-    });
+      'status': 'checked_out',
+      'check_out_time': DateTime.now().toIso8601String(),
+    }).eq('id', int.parse(widget.logId));
 
     if (!mounted) return;
 

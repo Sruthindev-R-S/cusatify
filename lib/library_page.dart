@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'main.dart';
 import 'qr_scanner_page.dart';
 import 'library_seat_map_page.dart';
 
@@ -15,11 +14,41 @@ class _LibraryPageState extends State<LibraryPage> {
   static const int totalSeats = 30;
   static const String validQr = "LIBRARY-ENTRY";
 
-  // Real-time stream — no manual loadSeatCount needed
-  final Stream<QuerySnapshot> _seatStream = FirebaseFirestore.instance
-      .collection("library_logs")
-      .where("status", isEqualTo: "checked_in")
-      .snapshots();
+  int occupiedSeats = 0;
+  bool loadingSeats = true;
+
+  @override
+  void initState() {
+    super.initState();
+    loadSeatCount();
+    // Listen for real-time changes
+    supabase
+        .from('library_logs')
+        .stream(primaryKey: ['id'])
+        .eq('status', 'checked_in')
+        .listen((data) {
+      if (mounted) {
+        setState(() {
+          occupiedSeats = data.length;
+          loadingSeats = false;
+        });
+      }
+    });
+  }
+
+  Future<void> loadSeatCount() async {
+    final result = await supabase
+        .from('library_logs')
+        .select('id')
+        .eq('status', 'checked_in');
+
+    if (mounted) {
+      setState(() {
+        occupiedSeats = (result as List).length;
+        loadingSeats = false;
+      });
+    }
+  }
 
   // ── QR scan entry point ───────────────────────────────────────────────────
   Future<void> processScan(String rawScanned) async {
@@ -37,24 +66,24 @@ class _LibraryPageState extends State<LibraryPage> {
       return;
     }
 
-    final user = FirebaseAuth.instance.currentUser;
+    final user = supabase.auth.currentUser;
     if (user == null) return;
 
     // Check already checked in
-    final existingCheckin = await FirebaseFirestore.instance
-        .collection("library_logs")
-        .where("uid", isEqualTo: user.uid)
-        .where("status", isEqualTo: "checked_in")
-        .get();
+    final existingCheckin = await supabase
+        .from('library_logs')
+        .select()
+        .eq('uid', user.id)
+        .eq('status', 'checked_in');
 
-    if (existingCheckin.docs.isNotEmpty) {
+    if ((existingCheckin as List).isNotEmpty) {
       if (!mounted) return;
-      final logData = existingCheckin.docs.first.data();
-      final existingSeat = logData["seatNumber"] ?? 1;
+      final logData = existingCheckin.first;
+      final existingSeat = logData["seat_number"] ?? 1;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Already checked in — Seat $existingSeat")),
       );
-      final logId = existingCheckin.docs.first.id;
+      final logId = logData["id"].toString();
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -65,12 +94,13 @@ class _LibraryPageState extends State<LibraryPage> {
     }
 
     // Fetch student data
-    final studentDoc = await FirebaseFirestore.instance
-        .collection("students")
-        .doc(user.uid)
-        .get();
+    final studentResult = await supabase
+        .from('students')
+        .select()
+        .eq('uid', user.id)
+        .maybeSingle();
 
-    if (!studentDoc.exists) {
+    if (studentResult == null) {
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -85,8 +115,8 @@ class _LibraryPageState extends State<LibraryPage> {
       context,
       MaterialPageRoute(
         builder: (_) => LibrarySeatMapPage(
-          studentUid: user.uid,
-          studentData: studentDoc.data(),
+          studentUid: user.id,
+          studentData: studentResult,
         ),
       ),
     );
@@ -99,25 +129,26 @@ class _LibraryPageState extends State<LibraryPage> {
     final facultyUid = parts[1];
     final date = parts[4];
 
-    final user = FirebaseAuth.instance.currentUser;
+    final user = supabase.auth.currentUser;
     if (user == null) return;
 
-    final studentDoc = await FirebaseFirestore.instance
-        .collection("students")
-        .doc(user.uid)
-        .get();
+    final studentResult = await supabase
+        .from('students')
+        .select()
+        .eq('uid', user.id)
+        .maybeSingle();
 
-    if (!studentDoc.exists) return;
-    final studentData = studentDoc.data()!;
+    if (studentResult == null) return;
+    final studentData = studentResult;
 
-    final existing = await FirebaseFirestore.instance
-        .collection("attendance")
-        .where("studentUid", isEqualTo: user.uid)
-        .where("facultyUid", isEqualTo: facultyUid)
-        .where("date", isEqualTo: date)
-        .get();
+    final existing = await supabase
+        .from('attendance')
+        .select('id')
+        .eq('student_uid', user.id)
+        .eq('faculty_uid', facultyUid)
+        .eq('date', date);
 
-    if (existing.docs.isNotEmpty) {
+    if ((existing as List).isNotEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Attendance already marked for today!")),
@@ -125,17 +156,16 @@ class _LibraryPageState extends State<LibraryPage> {
       return;
     }
 
-    await FirebaseFirestore.instance.collection("attendance").add({
-      "studentUid": user.uid,
-      "studentName": studentData["name"],
-      "studentId": studentData["studentId"],
-      "department": studentData["department"],
-      "semester": studentData["semester"],
-      "facultyUid": facultyUid,
-      "subject": "GENERAL",
-      "present": true,
-      "date": date,
-      "timestamp": FieldValue.serverTimestamp(),
+    await supabase.from('attendance').insert({
+      'student_uid': user.id,
+      'student_name': studentData["name"],
+      'student_id': studentData["student_id"],
+      'department': studentData["department"],
+      'semester': studentData["semester"],
+      'faculty_uid': facultyUid,
+      'subject': "GENERAL",
+      'present': true,
+      'date': date,
     });
 
     if (!mounted) return;
@@ -145,40 +175,29 @@ class _LibraryPageState extends State<LibraryPage> {
       context,
       MaterialPageRoute(
         builder: (_) =>
-            LibrarySeatMapPage(studentUid: user.uid, studentData: studentData),
+            LibrarySeatMapPage(studentUid: user.id, studentData: studentData),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final availableSeats = (totalSeats - occupiedSeats).clamp(0, totalSeats);
+    final isFull = availableSeats <= 0;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF8F1EB),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: _seatStream,
-        builder: (context, snapshot) {
-          final occupiedSeats = snapshot.hasData
-              ? snapshot.data!.docs.length
-              : 0;
-          final availableSeats = (totalSeats - occupiedSeats).clamp(
-            0,
-            totalSeats,
-          );
-          final isFull = availableSeats <= 0;
-
-          return SingleChildScrollView(
-            child: Column(
-              children: [
-                header(),
-                const SizedBox(height: 20),
-                qrCard(isFull),
-                const SizedBox(height: 20),
-                seatInfoCard(occupiedSeats, availableSeats),
-                const SizedBox(height: 40),
-              ],
-            ),
-          );
-        },
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            header(),
+            const SizedBox(height: 20),
+            qrCard(isFull),
+            const SizedBox(height: 20),
+            seatInfoCard(occupiedSeats, availableSeats),
+            const SizedBox(height: 40),
+          ],
+        ),
       ),
     );
   }

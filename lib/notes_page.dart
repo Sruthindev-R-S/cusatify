@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'main.dart';
 
 class NotesPage extends StatefulWidget {
   const NotesPage({super.key});
@@ -10,12 +9,8 @@ class NotesPage extends StatefulWidget {
 }
 
 class _NotesPageState extends State<NotesPage> {
-  final TextEditingController _titleCtrl = TextEditingController();
-  final TextEditingController _contentCtrl = TextEditingController();
   List<Map<String, dynamic>> notes = [];
   bool loading = true;
-
-  String get uid => FirebaseAuth.instance.currentUser!.uid;
 
   @override
   void initState() {
@@ -24,112 +19,95 @@ class _NotesPageState extends State<NotesPage> {
   }
 
   Future<void> loadNotes() async {
-    final query = await FirebaseFirestore.instance
-        .collection("students")
-        .doc(uid)
-        .collection("notes")
-        .orderBy("createdAt", descending: true)
-        .get();
+    final uid = supabase.auth.currentUser!.id;
+    final result = await supabase
+        .from('notes')
+        .select()
+        .eq('user_uid', uid)
+        .order('created_at', ascending: false);
 
     if (mounted) {
       setState(() {
-        notes = query.docs
-            .map((d) => {"id": d.id, ...d.data()})
-            .toList();
+        notes = (result as List).cast<Map<String, dynamic>>();
         loading = false;
       });
     }
   }
 
-  Future<void> addNote() async {
-    if (_titleCtrl.text.isEmpty) return;
-
-    await FirebaseFirestore.instance
-        .collection("students")
-        .doc(uid)
-        .collection("notes")
-        .add({
-      "title": _titleCtrl.text,
-      "content": _contentCtrl.text,
-      "createdAt": FieldValue.serverTimestamp(),
+  Future<void> addNote(String title, String content) async {
+    final uid = supabase.auth.currentUser!.id;
+    await supabase.from('notes').insert({
+      'user_uid': uid,
+      'title': title,
+      'content': content,
     });
-
-    _titleCtrl.clear();
-    _contentCtrl.clear();
-    Navigator.pop(context);
     loadNotes();
   }
 
-  Future<void> deleteNote(String noteId) async {
-    await FirebaseFirestore.instance
-        .collection("students")
-        .doc(uid)
-        .collection("notes")
-        .doc(noteId)
-        .delete();
-
+  Future<void> deleteNote(dynamic noteId) async {
+    await supabase.from('notes').delete().eq('id', noteId);
     loadNotes();
   }
 
   void showAddNoteDialog() {
-    showModalBottomSheet(
+    final titleCtrl = TextEditingController();
+    final contentCtrl = TextEditingController();
+
+    showDialog(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          left: 20,
-          right: 20,
-          top: 20,
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-        ),
-        child: Column(
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        title: const Text("New Note", style: TextStyle(fontWeight: FontWeight.bold)),
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              "New Note",
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
             TextField(
-              controller: _titleCtrl,
+              controller: titleCtrl,
               decoration: InputDecoration(
-                labelText: "Title",
+                hintText: "Title",
+                filled: true,
+                fillColor: const Color(0xFFFAF7EB),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
                 ),
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             TextField(
-              controller: _contentCtrl,
+              controller: contentCtrl,
               maxLines: 4,
               decoration: InputDecoration(
-                labelText: "Content",
+                hintText: "Write your note...",
+                filled: true,
+                fillColor: const Color(0xFFFAF7EB),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
                 ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF5D1F1E),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-                onPressed: addNote,
-                child: const Text("Save Note", style: TextStyle(fontSize: 16)),
               ),
             ),
           ],
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF5D1F1E),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+            onPressed: () {
+              if (titleCtrl.text.isNotEmpty) {
+                addNote(titleCtrl.text, contentCtrl.text);
+                Navigator.pop(context);
+              }
+            },
+            child: const Text("Add"),
+          ),
+        ],
       ),
     );
   }
@@ -140,7 +118,7 @@ class _NotesPageState extends State<NotesPage> {
       backgroundColor: const Color(0xFFFAF7EB),
       appBar: AppBar(
         backgroundColor: const Color(0xFF5D1F1E),
-        title: const Text("Notes"),
+        title: const Text("My Notes"),
       ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: const Color(0xFF5D1F1E),
@@ -150,58 +128,58 @@ class _NotesPageState extends State<NotesPage> {
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : notes.isEmpty
-              ? const Center(
-                  child: Text(
-                    "No notes yet.\nTap + to add one!",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.black54, fontSize: 16),
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.note_alt_outlined, size: 60, color: Colors.black26),
+                      const SizedBox(height: 12),
+                      const Text("No notes yet", style: TextStyle(color: Colors.black54, fontSize: 16)),
+                    ],
                   ),
                 )
               : ListView.builder(
                   padding: const EdgeInsets.all(16),
                   itemCount: notes.length,
                   itemBuilder: (context, index) {
-                    final note = notes[index];
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: const [
-                          BoxShadow(color: Colors.black12, blurRadius: 4),
-                        ],
+                    final n = notes[index];
+                    return Dismissible(
+                      key: Key(n["id"].toString()),
+                      direction: DismissDirection.endToStart,
+                      background: Container(
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.only(right: 20),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade400,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Icon(Icons.delete, color: Colors.white),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  note["title"] ?? "",
-                                  style: const TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.delete_outline,
-                                    color: Colors.red, size: 22),
-                                onPressed: () => deleteNote(note["id"]),
+                      onDismissed: (_) => deleteNote(n["id"]),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              n["title"] ?? "",
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                            ),
+                            if ((n["content"] ?? "").isNotEmpty) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                n["content"],
+                                style: const TextStyle(color: Colors.black54, fontSize: 14),
                               ),
                             ],
-                          ),
-                          if ((note["content"] ?? "").isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            Text(
-                              note["content"],
-                              style: const TextStyle(
-                                  color: Colors.black87, fontSize: 14),
-                            ),
                           ],
-                        ],
+                        ),
                       ),
                     );
                   },

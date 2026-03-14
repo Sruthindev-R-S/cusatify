@@ -31,13 +31,8 @@ dependencies:
   flutter:
     sdk: flutter
 
-  cloud_firestore: ^4.15.4
-  firebase_storage: ^11.6.10
-  image_picker: ^1.0.7
   supabase_flutter: ^2.0.0
-  firebase_core: ^2.24.2
-  firebase_auth: ^4.17.8
-  firebase_app_check: ^0.2.2+7
+  image_picker: ^1.0.7
   mobile_scanner: ^5.0.0
   qr_flutter: ^4.1.0
   percent_indicator: ^4.2.3

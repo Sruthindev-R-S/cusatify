@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:percent_indicator/circular_percent_indicator.dart';
+import 'main.dart';
 import 'library_page.dart';
 import 'student_timetable_page.dart';
 import 'notes_page.dart';
@@ -32,16 +31,17 @@ class _StudentHomePageState extends State<StudentHomePage> {
   }
 
   Future<void> loadStudentData() async {
-    final uid = FirebaseAuth.instance.currentUser!.uid;
+    final uid = supabase.auth.currentUser!.id;
 
-    final doc = await FirebaseFirestore.instance
-        .collection("students")
-        .doc(uid)
-        .get();
+    final data = await supabase
+        .from('students')
+        .select()
+        .eq('uid', uid)
+        .single();
 
     if (mounted) {
       setState(() {
-        student = doc.data();
+        student = data;
       });
       await loadSubjectsFromFaculty();
       await loadAttendanceData(uid);
@@ -54,16 +54,16 @@ class _StudentHomePageState extends State<StudentHomePage> {
     final semester = student?["semester"];
     if (department == null || semester == null) return;
 
-    final query = await FirebaseFirestore.instance
-        .collection("faculty")
-        .where("facultyDepartment", isEqualTo: department)
-        .where("semester", isEqualTo: semester)
-        .get();
+    final result = await supabase
+        .from('faculty')
+        .select('subject')
+        .eq('faculty_department', department)
+        .eq('semester', semester);
 
     if (mounted) {
       setState(() {
-        subjects = query.docs
-            .map((doc) => doc.data()["subject"] as String?)
+        subjects = (result as List)
+            .map((doc) => doc["subject"] as String?)
             .where((s) => s != null && s.isNotEmpty)
             .cast<String>()
             .toSet()
@@ -77,14 +77,14 @@ class _StudentHomePageState extends State<StudentHomePage> {
     Map<String, String> fractions = {};
 
     for (final subject in subjects) {
-      final query = await FirebaseFirestore.instance
-          .collection("attendance")
-          .where("studentUid", isEqualTo: uid)
-          .where("subject", isEqualTo: subject)
-          .get();
+      final result = await supabase
+          .from('attendance')
+          .select()
+          .eq('student_uid', uid)
+          .eq('subject', subject);
 
-      int total = query.docs.length;
-      int present = query.docs.where((d) => d.data()["present"] == true).length;
+      int total = (result as List).length;
+      int present = result.where((d) => d["present"] == true).length;
 
       percents[subject] = total > 0 ? present / total : 0.0;
       fractions[subject] = "$present/$total";
@@ -100,16 +100,14 @@ class _StudentHomePageState extends State<StudentHomePage> {
   }
 
   Future<void> loadEvents() async {
-    final query = await FirebaseFirestore.instance
-        .collection("events")
-        .orderBy("createdAt", descending: true)
-        .get();
+    final result = await supabase
+        .from('events')
+        .select()
+        .order('created_at', ascending: false);
 
     if (mounted) {
       setState(() {
-        events = query.docs
-            .map((d) => {"id": d.id, ...d.data()})
-            .toList();
+        events = (result as List).cast<Map<String, dynamic>>();
       });
     }
   }
@@ -162,7 +160,7 @@ class _StudentHomePageState extends State<StudentHomePage> {
                     IconButton(
                       icon: const Icon(Icons.logout_rounded, color: Colors.white),
                       onPressed: () async {
-                        await FirebaseAuth.instance.signOut();
+                        await supabase.auth.signOut();
                         if (!mounted) return;
                         Navigator.pushAndRemoveUntil(
                           context,
@@ -223,6 +221,8 @@ class _StudentHomePageState extends State<StudentHomePage> {
   }
 
   Widget profileCard() {
+    final photoUrl = student?["photo_url"];
+
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
@@ -243,9 +243,11 @@ class _StudentHomePageState extends State<StudentHomePage> {
             height: 65,
             width: 65,
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF5D1F1E), Color(0xFFAB4F41), Color(0xFFCB6F4A)],
-              ),
+              gradient: photoUrl == null
+                  ? const LinearGradient(
+                      colors: [Color(0xFF5D1F1E), Color(0xFFAB4F41), Color(0xFFCB6F4A)],
+                    )
+                  : null,
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
@@ -254,8 +256,16 @@ class _StudentHomePageState extends State<StudentHomePage> {
                   offset: const Offset(0, 5),
                 )
               ],
+              image: photoUrl != null
+                  ? DecorationImage(
+                      image: NetworkImage(photoUrl),
+                      fit: BoxFit.cover,
+                    )
+                  : null,
             ),
-            child: const Icon(Icons.person, color: Colors.white, size: 35),
+            child: photoUrl == null
+                ? const Icon(Icons.person, color: Colors.white, size: 35)
+                : null,
           ),
           const SizedBox(width: 20),
           Expanded(
@@ -272,7 +282,7 @@ class _StudentHomePageState extends State<StudentHomePage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  "ID: ${student!["studentId"]}",
+                  "ID: ${student!["student_id"]}",
                   style: const TextStyle(
                     color: Colors.black45,
                     fontSize: 14,
@@ -440,7 +450,7 @@ class _StudentHomePageState extends State<StudentHomePage> {
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          Icon(Icons.calendar_today, size: 12, color: Colors.black45),
+                          const Icon(Icons.calendar_today, size: 12, color: Colors.black45),
                           const SizedBox(width: 5),
                           Text(
                             "${e["date"]} • ${e["time"] ?? "TBA"}",

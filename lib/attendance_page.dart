@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'main.dart';
 
 class AttendancePage extends StatefulWidget {
   final String semester;
@@ -29,15 +28,15 @@ class _AttendancePageState extends State<AttendancePage> {
   }
 
   Future<void> loadStudents() async {
-    final query = await FirebaseFirestore.instance
-        .collection("students")
-        .where("semester", isEqualTo: widget.semester)
-        .get();
+    final result = await supabase
+        .from('students')
+        .select()
+        .eq('semester', widget.semester);
 
     if (mounted) {
       setState(() {
-        students = query.docs
-            .map((doc) => {"uid": doc.id, ...doc.data()})
+        students = (result as List)
+            .map((doc) => Map<String, dynamic>.from(doc))
             .toList();
         loading = false;
       });
@@ -47,27 +46,22 @@ class _AttendancePageState extends State<AttendancePage> {
   Future<void> submitAttendance() async {
     setState(() => submitting = true);
 
-    final facultyUid = FirebaseAuth.instance.currentUser!.uid;
+    final facultyUid = supabase.auth.currentUser!.id;
     final now = DateTime.now();
     final dateStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
-    final batch = FirebaseFirestore.instance.batch();
 
-    for (final student in students) {
-      final docRef = FirebaseFirestore.instance.collection("attendance").doc();
-      batch.set(docRef, {
-        "subject": widget.facultySubject,
-        "semester": widget.semester,
-        "date": dateStr,
-        "studentUid": student["uid"],
-        "studentName": student["name"],
-        "studentId": student["studentId"],
-        "present": presentUids.contains(student["uid"]),
-        "markedBy": facultyUid,
-        "timestamp": FieldValue.serverTimestamp(),
-      });
-    }
+    final records = students.map((student) => {
+      'subject': widget.facultySubject,
+      'semester': widget.semester,
+      'date': dateStr,
+      'student_uid': student['uid'],
+      'student_name': student['name'],
+      'student_id': student['student_id'],
+      'present': presentUids.contains(student['uid']),
+      'marked_by': facultyUid,
+    }).toList();
 
-    await batch.commit();
+    await supabase.from('attendance').insert(records);
 
     if (!mounted) return;
 
@@ -91,7 +85,7 @@ class _AttendancePageState extends State<AttendancePage> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF5D1F1E),
         elevation: 0,
-        title: Text("Manual Attendance", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        title: const Text("Manual Attendance", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         centerTitle: true,
       ),
       body: loading
@@ -224,7 +218,7 @@ class _AttendancePageState extends State<AttendancePage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(s["name"] ?? "", style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-                    Text("ID: ${s["studentId"]}", style: const TextStyle(color: Colors.black38, fontSize: 12)),
+                    Text("ID: ${s["student_id"]}", style: const TextStyle(color: Colors.black38, fontSize: 12)),
                   ],
                 ),
               ),
@@ -234,8 +228,11 @@ class _AttendancePageState extends State<AttendancePage> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                 onChanged: (val) {
                   setState(() {
-                    if (val == true) presentUids.add(uid);
-                    else presentUids.remove(uid);
+                    if (val == true) {
+                      presentUids.add(uid);
+                    } else {
+                      presentUids.remove(uid);
+                    }
                   });
                 },
               ),

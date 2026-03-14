@@ -37,7 +37,10 @@ class AttendanceQRPage extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.green.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(20),
@@ -49,7 +52,10 @@ class AttendanceQRPage extends StatelessWidget {
                     SizedBox(width: 8),
                     Text(
                       "LIVE SESSION",
-                      style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        color: Colors.green,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ],
                 ),
@@ -58,11 +64,19 @@ class AttendanceQRPage extends StatelessWidget {
               Text(
                 "General Attendance",
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: Color(0xFF5D1F1E)),
+                style: const TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF5D1F1E),
+                ),
               ),
               Text(
                 "All Semesters • $facultyName",
-                style: const TextStyle(fontSize: 16, color: Colors.black45, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: Colors.black45,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(height: 40),
               Container(
@@ -75,7 +89,7 @@ class AttendanceQRPage extends StatelessWidget {
                       color: const Color(0xFF5D1F1E).withOpacity(0.1),
                       blurRadius: 30,
                       offset: const Offset(0, 15),
-                    )
+                    ),
                   ],
                 ),
                 child: Column(
@@ -84,7 +98,7 @@ class AttendanceQRPage extends StatelessWidget {
                       data: qrData,
                       version: QrVersions.auto,
                       size: 240.0,
-                      gapless: false,
+                      gapless: true,
                       eyeStyle: const QrEyeStyle(
                         eyeShape: QrEyeShape.circle,
                         color: Color(0xFF5D1F1E),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'student_register_page.dart';
 import 'faculty_registration.dart';
+import 'login_page.dart';
 
 class RoleSelectionPage extends StatefulWidget {
   const RoleSelectionPage({super.key});
@@ -216,6 +217,25 @@ class _RoleSelectionPageState extends State<RoleSelectionPage> {
                       ),
                     ),
 
+                    const SizedBox(height: 20),
+
+                    // Sign In option for returning users
+                    TextButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const LoginPage()),
+                        );
+                      },
+                      child: const Text(
+                        "Already have an account? Sign In",
+                        style: TextStyle(
+                          color: Color(0xFF5D1F1E),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
 
                   ],
                 ),

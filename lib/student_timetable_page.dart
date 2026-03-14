@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'main.dart';
 
 class StudentTimetablePage extends StatefulWidget {
   const StudentTimetablePage({super.key});
@@ -22,25 +21,25 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> {
   }
 
   Future<void> loadData() async {
-    final uid = FirebaseAuth.instance.currentUser!.uid;
-    final doc = await FirebaseFirestore.instance
-        .collection("students")
-        .doc(uid)
-        .get();
+    final uid = supabase.auth.currentUser!.id;
+    final doc = await supabase
+        .from('students')
+        .select()
+        .eq('uid', uid)
+        .single();
 
-    final data = doc.data();
-    semester = data?["semester"] ?? "1";
-    department = data?["department"] ?? "";
+    semester = doc["semester"] ?? "1";
+    department = doc["department"] ?? "";
 
     // Query faculty teaching this semester
-    final query = await FirebaseFirestore.instance
-        .collection("faculty")
-        .where("semester", isEqualTo: semester)
-        .get();
+    final result = await supabase
+        .from('faculty')
+        .select()
+        .eq('semester', semester!);
 
     if (mounted) {
       setState(() {
-        facultyEntries = query.docs.map((d) => d.data()).toList();
+        facultyEntries = (result as List).cast<Map<String, dynamic>>();
         loading = false;
       });
     }
@@ -140,8 +139,8 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> {
                     // Show each faculty entry as a timetable card
                     ...facultyEntries.map((f) {
                       final subject = f["subject"] ?? "Unknown";
-                      final teacherName = f["facultyName"] ?? "";
-                      final dept = f["facultyDepartment"] ?? "";
+                      final teacherName = f["faculty_name"] ?? "";
+                      final dept = f["faculty_department"] ?? "";
                       final color = subjectColor(subject);
                       final icon = subjectIcon(subject);
 

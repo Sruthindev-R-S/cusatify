@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:intl/intl.dart';
+import 'main.dart';
 import 'attendance_page.dart';
 import 'create_event_page.dart';
 import 'role_selection_page.dart';
+import 'enrolled_students_page.dart';
 
 class FacultyHomePage extends StatefulWidget {
   const FacultyHomePage({super.key});
@@ -33,15 +33,16 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
   }
 
   Future<void> loadFacultyData() async {
-    final uid = FirebaseAuth.instance.currentUser!.uid;
-    final doc = await FirebaseFirestore.instance
-        .collection("faculty")
-        .doc(uid)
-        .get();
+    final uid = supabase.auth.currentUser!.id;
+    final data = await supabase
+        .from('faculty')
+        .select()
+        .eq('uid', uid)
+        .single();
 
     if (mounted) {
       setState(() {
-        faculty = doc.data();
+        faculty = data;
         selectedSemester = faculty?["semester"] ?? "1";
       });
       loadStudentCount();
@@ -53,14 +54,14 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
   Future<void> loadStudentCount() async {
     setState(() => loadingCount = true);
 
-    final query = await FirebaseFirestore.instance
-        .collection("students")
-        .where("semester", isEqualTo: selectedSemester)
-        .get();
+    final result = await supabase
+        .from('students')
+        .select('uid')
+        .eq('semester', selectedSemester);
 
     if (mounted) {
       setState(() {
-        studentCount = query.docs.length;
+        studentCount = (result as List).length;
         loadingCount = false;
       });
     }
@@ -69,16 +70,14 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
   Future<void> loadTimetable() async {
     setState(() => loadingTimetable = true);
 
-    final query = await FirebaseFirestore.instance
-        .collection("faculty")
-        .where("semester", isEqualTo: selectedSemester)
-        .get();
+    final result = await supabase
+        .from('faculty')
+        .select()
+        .eq('semester', selectedSemester);
 
     if (mounted) {
       setState(() {
-        timetableEntries = query.docs
-            .map((d) => d.data())
-            .toList();
+        timetableEntries = (result as List).cast<Map<String, dynamic>>();
         loadingTimetable = false;
       });
     }
@@ -87,17 +86,15 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
   Future<void> loadLibraryLogs() async {
     setState(() => loadingLibraryLogs = true);
 
-    final query = await FirebaseFirestore.instance
-        .collection("library_logs")
-        .orderBy("timestamp", descending: true)
-        .limit(20)
-        .get();
+    final result = await supabase
+        .from('library_logs')
+        .select()
+        .order('timestamp', ascending: false)
+        .limit(20);
 
     if (mounted) {
       setState(() {
-        libraryLogs = query.docs
-            .map((d) => {"id": d.id, ...d.data()})
-            .toList();
+        libraryLogs = (result as List).cast<Map<String, dynamic>>();
         loadingLibraryLogs = false;
       });
     }
@@ -127,13 +124,20 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
                   flexibleSpace: FlexibleSpaceBar(
                     title: const Text(
                       "Faculty Dashboard",
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 18,
+                      ),
                     ),
                     centerTitle: true,
                     background: Container(
                       decoration: const BoxDecoration(
                         gradient: LinearGradient(
-                          colors: [Color(0xFF5D1F1E), Color(0xFFAB4F41), Color(0xFFCB6F4A)],
+                          colors: [
+                            Color(0xFF5D1F1E),
+                            Color(0xFFAB4F41),
+                            Color(0xFFCB6F4A),
+                          ],
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                         ),
@@ -146,13 +150,18 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
                   ),
                   actions: [
                     IconButton(
-                      icon: const Icon(Icons.logout_rounded, color: Colors.white),
+                      icon: const Icon(
+                        Icons.logout_rounded,
+                        color: Colors.white,
+                      ),
                       onPressed: () async {
-                        await FirebaseAuth.instance.signOut();
+                        await supabase.auth.signOut();
                         if (!mounted) return;
                         Navigator.pushAndRemoveUntil(
                           context,
-                          MaterialPageRoute(builder: (_) => const RoleSelectionPage()),
+                          MaterialPageRoute(
+                            builder: (_) => const RoleSelectionPage(),
+                          ),
                           (_) => false,
                         );
                       },
@@ -176,6 +185,8 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
                         inlineQRCard(),
                         const SizedBox(height: 20),
                         markAttendanceButton(),
+                        const SizedBox(height: 15),
+                        viewStudentsButton(),
                         const SizedBox(height: 25),
                         libraryLogSection(),
                         const SizedBox(height: 100),
@@ -194,7 +205,10 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
         },
         backgroundColor: const Color(0xFFCB6F4A),
         icon: const Icon(Icons.event_available),
-        label: const Text("Create Event", style: TextStyle(fontWeight: FontWeight.bold)),
+        label: const Text(
+          "Create Event",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
       ),
     );
   }
@@ -202,9 +216,7 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
   Widget inlineQRCard() {
     final now = DateTime.now();
     final dateStr = DateFormat('yyyy-MM-dd').format(now);
-    final facultyUid = FirebaseAuth.instance.currentUser!.uid;
-    final subject = faculty?["subject"] ?? "N/A";
-    final semester = faculty?["semester"] ?? "1";
+    final facultyUid = supabase.auth.currentUser!.id;
     final qrData = "ATTENDANCE:$facultyUid:GENERAL:ALL:$dateStr";
 
     return Container(
@@ -213,9 +225,16 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: const Color(0xFFEECB88).withOpacity(0.3), width: 1.5),
+        border: Border.all(
+          color: const Color(0xFFEECB88).withOpacity(0.3),
+          width: 1.5,
+        ),
         boxShadow: [
-          BoxShadow(color: const Color(0xFFCB6F4A).withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 10)),
+          BoxShadow(
+            color: const Color(0xFFCB6F4A).withOpacity(0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
         ],
       ),
       child: Column(
@@ -225,10 +244,16 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
               const Icon(Icons.qr_code_rounded, color: Color(0xFF5D1F1E)),
               const SizedBox(width: 12),
               const Expanded(
-                child: Text("Attendance QR", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                child: Text(
+                  "Attendance QR",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.green.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
@@ -238,7 +263,14 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
                   children: [
                     Icon(Icons.circle, color: Colors.green, size: 8),
                     SizedBox(width: 6),
-                    Text("LIVE", style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.w800)),
+                    Text(
+                      "LIVE",
+                      style: TextStyle(
+                        color: Colors.green,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -247,7 +279,11 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
           const SizedBox(height: 5),
           Text(
             "General Attendance • All Semesters • $dateStr",
-            style: const TextStyle(color: Colors.black38, fontSize: 12, fontWeight: FontWeight.w600),
+            style: const TextStyle(
+              color: Colors.black38,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
           ),
           const SizedBox(height: 20),
           Container(
@@ -260,7 +296,7 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
               data: qrData,
               version: QrVersions.auto,
               size: 200.0,
-              gapless: false,
+              gapless: true,
               eyeStyle: const QrEyeStyle(
                 eyeShape: QrEyeShape.circle,
                 color: Color(0xFF5D1F1E),
@@ -274,7 +310,12 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
           const SizedBox(height: 12),
           const Text(
             "Students scan this to mark attendance",
-            style: TextStyle(color: Colors.black26, fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 0.5),
+            style: TextStyle(
+              color: Colors.black26,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+            ),
           ),
         ],
       ),
@@ -282,6 +323,8 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
   }
 
   Widget profileCard() {
+    final photoUrl = faculty?["photo_url"];
+
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
@@ -294,7 +337,10 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
             offset: const Offset(0, 10),
           ),
         ],
-        border: Border.all(color: const Color(0xFFEECB88).withOpacity(0.4), width: 1.5),
+        border: Border.all(
+          color: const Color(0xFFEECB88).withOpacity(0.4),
+          width: 1.5,
+        ),
       ),
       child: Row(
         children: [
@@ -302,12 +348,26 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
             height: 65,
             width: 65,
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF5D1F1E), Color(0xFFAB4F41), Color(0xFFCB6F4A)],
-              ),
+              gradient: photoUrl == null
+                  ? const LinearGradient(
+                      colors: [
+                        Color(0xFF5D1F1E),
+                        Color(0xFFAB4F41),
+                        Color(0xFFCB6F4A),
+                      ],
+                    )
+                  : null,
               shape: BoxShape.circle,
+              image: photoUrl != null
+                  ? DecorationImage(
+                      image: NetworkImage(photoUrl),
+                      fit: BoxFit.cover,
+                    )
+                  : null,
             ),
-            child: const Icon(Icons.person, color: Colors.white, size: 35),
+            child: photoUrl == null
+                ? const Icon(Icons.person, color: Colors.white, size: 35)
+                : null,
           ),
           const SizedBox(width: 20),
           Expanded(
@@ -315,16 +375,23 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  faculty!["facultyName"] ?? "",
-                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+                  faculty!["faculty_name"] ?? "",
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  "Dept: ${faculty!["facultyDepartment"] ?? ""}",
-                  style: const TextStyle(color: Colors.black45, fontSize: 14, fontWeight: FontWeight.w600),
+                  "Dept: ${faculty!["faculty_department"] ?? ""}",
+                  style: const TextStyle(
+                    color: Colors.black45,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 Text(
-                  "ID: ${faculty!["facultyId"]}",
+                  "ID: ${faculty!["faculty_id"]}",
                   style: const TextStyle(color: Colors.black45, fontSize: 13),
                 ),
               ],
@@ -342,23 +409,30 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(22),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-          ),
+          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10),
         ],
       ),
       child: Row(
         children: [
           const Icon(Icons.school_rounded, color: Color(0xFF5D1F1E), size: 20),
           const SizedBox(width: 15),
-          const Text("Select Semester:", style: TextStyle(fontWeight: FontWeight.bold)),
+          const Text(
+            "Select Semester:",
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
           const SizedBox(width: 15),
           Expanded(
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
                 value: selectedSemester,
-                items: semesters.map((s) => DropdownMenuItem(value: s, child: Text("Semester $s"))).toList(),
+                items: semesters
+                    .map(
+                      (s) => DropdownMenuItem(
+                        value: s,
+                        child: Text("Semester $s"),
+                      ),
+                    )
+                    .toList(),
                 onChanged: (val) {
                   if (val != null) {
                     setState(() => selectedSemester = val);
@@ -400,7 +474,13 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
     );
   }
 
-  Widget statCard(String title, String value, IconData icon, Color color, bool loading) {
+  Widget statCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+    bool loading,
+  ) {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -427,14 +507,28 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
           ),
           const SizedBox(height: 15),
           loading
-              ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2))
+              ? const SizedBox(
+                  height: 24,
+                  width: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
               : Text(
                   value,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-          Text(title, style: const TextStyle(color: Colors.black38, fontSize: 12, fontWeight: FontWeight.bold)),
+          Text(
+            title,
+            style: const TextStyle(
+              color: Colors.black38,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );
@@ -454,52 +548,81 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          const Row(
             children: [
-              const Icon(Icons.calendar_view_day_rounded, color: Color(0xFF5D1F1E)),
-              const SizedBox(width: 12),
-              const Text("Faculty & Subjects", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+              Icon(Icons.calendar_view_day_rounded, color: Color(0xFF5D1F1E)),
+              SizedBox(width: 12),
+              Text(
+                "Faculty & Subjects",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              ),
             ],
           ),
           const SizedBox(height: 20),
           loadingTimetable
               ? const Center(child: CircularProgressIndicator())
               : timetableEntries.isEmpty
-                  ? const Text("No records found", style: TextStyle(color: Colors.black26))
-                  : Column(
-                      children: timetableEntries.map((f) => Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFAF7EB),
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(color: const Color(0xFF5D1F1E).withOpacity(0.05)),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF5D1F1E).withOpacity(0.1),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.person, color: Color(0xFF5D1F1E), size: 20),
+              ? const Text(
+                  "No records found",
+                  style: TextStyle(color: Colors.black26),
+                )
+              : Column(
+                  children: timetableEntries
+                      .map(
+                        (f) => Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFAF7EB),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: const Color(0xFF5D1F1E).withOpacity(0.05),
                             ),
-                            const SizedBox(width: 15),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(f["subject"] ?? "", style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
-                                  Text("${f["facultyName"]} • ${f["facultyDepartment"]}",
-                                      style: const TextStyle(color: Colors.black45, fontSize: 12)),
-                                ],
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: const Color(
+                                    0xFF5D1F1E,
+                                  ).withOpacity(0.1),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.person,
+                                  color: Color(0xFF5D1F1E),
+                                  size: 20,
+                                ),
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 15),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      f["subject"] ?? "",
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                    Text(
+                                      "${f["faculty_name"]} • ${f["faculty_department"]}",
+                                      style: const TextStyle(
+                                        color: Colors.black45,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      )).toList(),
-                    ),
+                      )
+                      .toList(),
+                ),
         ],
       ),
     );
@@ -522,10 +645,16 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
         height: 60,
         width: double.infinity,
         decoration: BoxDecoration(
-          gradient: const LinearGradient(colors: [Color(0xFF5D1F1E), Color(0xFFAB4F41)]),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF5D1F1E), Color(0xFFAB4F41)],
+          ),
           borderRadius: BorderRadius.circular(22),
           boxShadow: [
-            BoxShadow(color: const Color(0xFF5D1F1E).withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 6)),
+            BoxShadow(
+              color: const Color(0xFF5D1F1E).withOpacity(0.3),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
           ],
         ),
         child: const Row(
@@ -533,7 +662,59 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
           children: [
             Icon(Icons.fact_check_rounded, color: Colors.white),
             SizedBox(width: 12),
-            Text("Mark Attendance", style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold)),
+            Text(
+              "Mark Attendance",
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget viewStudentsButton() {
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const EnrolledStudentsPage()),
+        );
+      },
+      child: Container(
+        height: 60,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(
+            color: const Color(0xFF5D1F1E).withOpacity(0.2),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF5D1F1E).withOpacity(0.06),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.people_alt_rounded, color: Color(0xFF5D1F1E)),
+            SizedBox(width: 12),
+            Text(
+              "View Enrolled Students",
+              style: TextStyle(
+                color: Color(0xFF5D1F1E),
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ],
         ),
       ),
@@ -547,9 +728,16 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: const Color(0xFFEECB88).withOpacity(0.3), width: 1.5),
+        border: Border.all(
+          color: const Color(0xFFEECB88).withOpacity(0.3),
+          width: 1.5,
+        ),
         boxShadow: [
-          BoxShadow(color: const Color(0xFFCB6F4A).withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 10)),
+          BoxShadow(
+            color: const Color(0xFFCB6F4A).withOpacity(0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
         ],
       ),
       child: Column(
@@ -560,12 +748,18 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
               const Icon(Icons.local_library_rounded, color: Color(0xFF5D1F1E)),
               const SizedBox(width: 12),
               const Expanded(
-                child: Text("Library Log", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                child: Text(
+                  "Library Log",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                ),
               ),
               InkWell(
                 onTap: loadLibraryLogs,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFF5D1F1E).withOpacity(0.08),
                     borderRadius: BorderRadius.circular(12),
@@ -575,7 +769,14 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
                     children: [
                       Icon(Icons.refresh, color: Color(0xFF5D1F1E), size: 14),
                       SizedBox(width: 4),
-                      Text("Refresh", style: TextStyle(color: Color(0xFF5D1F1E), fontSize: 11, fontWeight: FontWeight.w700)),
+                      Text(
+                        "Refresh",
+                        style: TextStyle(
+                          color: Color(0xFF5D1F1E),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -584,99 +785,129 @@ class _FacultyHomePageState extends State<FacultyHomePage> {
           ),
           const SizedBox(height: 15),
           loadingLibraryLogs
-              ? const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(20),
+                    child: CircularProgressIndicator(),
+                  ),
+                )
               : libraryLogs.isEmpty
-                  ? const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(20),
-                        child: Text("No library check-ins yet", style: TextStyle(color: Colors.black26, fontSize: 14)),
-                      ),
-                    )
-                  : Column(
-                      children: libraryLogs.map((log) {
-                        final isCheckedIn = log["status"] == "checked_in";
-                        final name = log["name"] ?? "Unknown";
-                        final studentId = log["studentId"] ?? "";
-                        final date = log["date"] ?? "";
-                        final time = log["time"] ?? "";
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(20),
+                    child: Text(
+                      "No library check-ins yet",
+                      style: TextStyle(color: Colors.black26, fontSize: 14),
+                    ),
+                  ),
+                )
+              : Column(
+                  children: libraryLogs.map((log) {
+                    final isCheckedIn = log["status"] == "checked_in";
+                    final name = log["name"] ?? "Unknown";
+                    final studentId = log["student_id"] ?? "";
+                    final date = log["date"] ?? "";
+                    final time = log["time"] ?? "";
 
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 10),
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFAF7EB),
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(color: const Color(0xFFEECB88).withOpacity(0.2)),
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFAF7EB),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: const Color(0xFFEECB88).withOpacity(0.2),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            height: 42,
+                            width: 42,
+                            decoration: BoxDecoration(
+                              color: isCheckedIn
+                                  ? Colors.green.withOpacity(0.1)
+                                  : Colors.grey.withOpacity(0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              isCheckedIn
+                                  ? Icons.login_rounded
+                                  : Icons.logout_rounded,
+                              color: isCheckedIn ? Colors.green : Colors.grey,
+                              size: 20,
+                            ),
                           ),
-                          child: Row(
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                Text(
+                                  "ID: $studentId",
+                                  style: const TextStyle(
+                                    color: Colors.black38,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Container(
-                                height: 42,
-                                width: 42,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
                                 decoration: BoxDecoration(
                                   color: isCheckedIn
                                       ? Colors.green.withOpacity(0.1)
                                       : Colors.grey.withOpacity(0.1),
-                                  shape: BoxShape.circle,
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
-                                child: Icon(
-                                  isCheckedIn ? Icons.login_rounded : Icons.logout_rounded,
-                                  color: isCheckedIn ? Colors.green : Colors.grey,
-                                  size: 20,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      name,
-                                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
-                                    ),
-                                    Text(
-                                      "ID: $studentId",
-                                      style: const TextStyle(color: Colors.black38, fontSize: 11),
-                                    ),
-                                  ],
+                                child: Text(
+                                  isCheckedIn ? "IN" : "OUT",
+                                  style: TextStyle(
+                                    color: isCheckedIn
+                                        ? Colors.green
+                                        : Colors.grey,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                  ),
                                 ),
                               ),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: isCheckedIn
-                                          ? Colors.green.withOpacity(0.1)
-                                          : Colors.grey.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      isCheckedIn ? "IN" : "OUT",
-                                      style: TextStyle(
-                                        color: isCheckedIn ? Colors.green : Colors.grey,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    date,
-                                    style: const TextStyle(color: Colors.black38, fontSize: 10, fontWeight: FontWeight.w600),
-                                  ),
-                                  Text(
-                                    time,
-                                    style: const TextStyle(color: Colors.black26, fontSize: 10),
-                                  ),
-                                ],
+                              const SizedBox(height: 4),
+                              Text(
+                                date,
+                                style: const TextStyle(
+                                  color: Colors.black38,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Text(
+                                time,
+                                style: const TextStyle(
+                                  color: Colors.black26,
+                                  fontSize: 10,
+                                ),
                               ),
                             ],
                           ),
-                        );
-                      }).toList(),
-                    ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
         ],
       ),
     );

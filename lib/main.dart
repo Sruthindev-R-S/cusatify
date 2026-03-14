@@ -1,11 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'firebase_options.dart';
-
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_app_check/firebase_app_check.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'supabase_config.dart';
 import 'role_selection_page.dart';
 import 'student_home_page.dart';
 import 'faculty_home_page.dart';
@@ -13,15 +8,19 @@ import 'faculty_home_page.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-
-  await FirebaseAppCheck.instance.activate(
-    androidProvider: AndroidProvider.debug,
+  await Supabase.initialize(
+    url: supabaseUrl,
+    anonKey: supabaseAnonKey,
   );
 
+  // Clear image cache to prevent PathNotFoundException with cached images
+  imageCache.clear();
+  imageCache.clearLiveImages();
 
   runApp(const MyApp());
 }
+
+final supabase = Supabase.instance.client;
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -32,11 +31,18 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class AuthGate extends StatelessWidget {
+class AuthGate extends StatefulWidget {
+  const AuthGate({super.key});
+
+  @override
+  State<AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<AuthGate> {
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: FirebaseAuth.instance.authStateChanges(),
+    return StreamBuilder<AuthState>(
+      stream: supabase.auth.onAuthStateChange,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
@@ -44,7 +50,8 @@ class AuthGate extends StatelessWidget {
           );
         }
 
-        if (snapshot.hasData) {
+        final session = supabase.auth.currentSession;
+        if (session != null) {
           return const RoleRouter();
         }
         return const RoleSelectionPage();
@@ -73,17 +80,18 @@ class _RoleRouterState extends State<RoleRouter> {
   }
 
   Future<void> detectRole() async {
-    final uid = FirebaseAuth.instance.currentUser!.uid;
+    final uid = supabase.auth.currentUser!.id;
 
-    // Check faculty collection first
-    final facultyDoc = await FirebaseFirestore.instance
-        .collection("faculty")
-        .doc(uid)
-        .get();
+    // Check faculty table first
+    final facultyData = await supabase
+        .from('faculty')
+        .select('uid')
+        .eq('uid', uid)
+        .maybeSingle();
 
     if (mounted) {
       setState(() {
-        isFaculty = facultyDoc.exists;
+        isFaculty = facultyData != null;
         loading = false;
       });
     }
@@ -92,9 +100,7 @@ class _RoleRouterState extends State<RoleRouter> {
   @override
   Widget build(BuildContext context) {
     if (loading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (isFaculty) {

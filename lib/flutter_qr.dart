@@ -25,7 +25,11 @@ class LibraryEntryQR extends StatelessWidget {
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(30),
                   boxShadow: const [
-                    BoxShadow(color: Colors.black12, blurRadius: 15, spreadRadius: 2),
+                    BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 15,
+                      spreadRadius: 2,
+                    ),
                   ],
                 ),
                 child: Column(
@@ -44,7 +48,7 @@ class LibraryEntryQR extends StatelessWidget {
                       data: "LIBRARY-ENTRY",
                       version: QrVersions.auto,
                       size: 260.0,
-                      gapless: false,
+                      gapless: true,
                       eyeStyle: const QrEyeStyle(
                         eyeShape: QrEyeShape.square,
                         color: Color(0xFF5D1F1E),
@@ -66,17 +70,17 @@ class LibraryEntryQR extends StatelessWidget {
                     const Text(
                       "Please show this code to the scanner at the entrance.",
                       textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.black54,
-                      ),
+                      style: TextStyle(fontSize: 14, color: Colors.black54),
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 40),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 15,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFF5D1F1E).withOpacity(0.1),
                   borderRadius: BorderRadius.circular(15),

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'main.dart';
 
 class CoursesPage extends StatefulWidget {
   const CoursesPage({super.key});
@@ -57,28 +56,29 @@ class _CoursesPageState extends State<CoursesPage> {
   }
 
   Future<void> loadCourses() async {
-    final uid = FirebaseAuth.instance.currentUser!.uid;
-    final doc = await FirebaseFirestore.instance
-        .collection("students")
-        .doc(uid)
-        .get();
+    final uid = supabase.auth.currentUser!.id;
+    final doc = await supabase
+        .from('students')
+        .select()
+        .eq('uid', uid)
+        .single();
 
-    semester = doc.data()?["semester"];
-    department = doc.data()?["department"];
+    semester = doc["semester"];
+    department = doc["department"];
 
     if (semester != null && department != null) {
-      final facultyQuery = await FirebaseFirestore.instance
-          .collection("faculty")
-          .where("facultyDepartment", isEqualTo: department)
-          .where("semester", isEqualTo: semester)
-          .get();
+      final facultyResult = await supabase
+          .from('faculty')
+          .select()
+          .eq('faculty_department', department!)
+          .eq('semester', semester!);
 
       final Map<String, String> facultyMap = {};
       final Set<String> subjectSet = {};
 
-      for (final fDoc in facultyQuery.docs) {
-        final subject = fDoc.data()["subject"] as String?;
-        final name = fDoc.data()["facultyName"] as String?;
+      for (final fDoc in (facultyResult as List)) {
+        final subject = fDoc["subject"] as String?;
+        final name = fDoc["faculty_name"] as String?;
         if (subject != null && subject.isNotEmpty) {
           subjectSet.add(subject);
           facultyMap[subject] = name ?? "Unknown";

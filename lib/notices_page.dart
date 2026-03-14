@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'main.dart';
 
 class NoticesPage extends StatefulWidget {
   const NoticesPage({super.key});
@@ -19,16 +19,14 @@ class _NoticesPageState extends State<NoticesPage> {
   }
 
   Future<void> loadNotices() async {
-    final query = await FirebaseFirestore.instance
-        .collection("notices")
-        .orderBy("createdAt", descending: true)
-        .get();
+    final result = await supabase
+        .from('notices')
+        .select()
+        .order('created_at', ascending: false);
 
     if (mounted) {
       setState(() {
-        notices = query.docs
-            .map((d) => {"id": d.id, ...d.data()})
-            .toList();
+        notices = (result as List).cast<Map<String, dynamic>>();
         loading = false;
       });
     }
