@@ -1,11 +1,20 @@
+import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
-const String supabaseUrl = 'https://crfpntlltsgidgsezzoq.supabase.co';
-const String supabaseAnonKey =
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNyZnBudGxsdHNnaWRnc2V6em9xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzExNDczMTksImV4cCI6MjA4NjcyMzMxOX0.snnP3CMmKfaikUKIQWi2m5DGUKhp32S-C4b9Zib4huA';
 
 void main() async {
   print('Testing Supabase connection...');
+
+  // Read from environment variables
+  final supabaseUrl = Platform.environment['SUPABASE_URL'] ??
+      const String.fromEnvironment('SUPABASE_URL', defaultValue: '');
+  final supabaseAnonKey = Platform.environment['SUPABASE_ANON_KEY'] ??
+      const String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: '');
+
+  if (supabaseUrl.isEmpty || supabaseAnonKey.isEmpty) {
+    print('Error: SUPABASE_URL and SUPABASE_ANON_KEY environment variables must be set.');
+    print('Usage: dart run --define=SUPABASE_URL=... --define=SUPABASE_ANON_KEY=... test_db_connection.dart');
+    return;
+  }
 
   try {
     await Supabase.initialize(url: supabaseUrl, anonKey: supabaseAnonKey);

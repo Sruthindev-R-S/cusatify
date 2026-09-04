@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'main.dart';
+import 'security/input_sanitizer.dart';
+import 'security/rate_limiter.dart';
+import 'security/security_config.dart';
 
 class NotesPage extends StatefulWidget {
   const NotesPage({super.key});
@@ -19,34 +22,91 @@ class _NotesPageState extends State<NotesPage> {
   }
 
   Future<void> loadNotes() async {
-    final uid = supabase.auth.currentUser!.id;
-    final result = await supabase
-        .from('notes')
-        .select()
-        .eq('user_uid', uid)
-        .order('created_at', ascending: false);
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
 
-    if (mounted) {
-      setState(() {
-        notes = (result as List).cast<Map<String, dynamic>>();
-        loading = false;
-      });
+    try {
+      final result = await supabase
+          .from('notes')
+          .select()
+          .eq('user_uid', user.id)
+          .order('created_at', ascending: false);
+
+      if (mounted) {
+        setState(() {
+          notes = (result as List).cast<Map<String, dynamic>>();
+          loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(SecurityConfig.getSafeErrorMessage(e))),
+        );
+      }
     }
   }
 
   Future<void> addNote(String title, String content) async {
-    final uid = supabase.auth.currentUser!.id;
-    await supabase.from('notes').insert({
-      'user_uid': uid,
-      'title': title,
-      'content': content,
-    });
-    loadNotes();
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    final sanitizedTitle = InputSanitizer.sanitizeText(title, maxLength: 100);
+    final sanitizedContent = InputSanitizer.sanitizeText(content, maxLength: 2000);
+
+    if (sanitizedTitle.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Note title cannot be empty")),
+      );
+      return;
+    }
+
+    // Rate Limiting
+    final rateLimitKey = 'notes:create:${user.id}';
+    if (!SecurityRateLimiter().canAttempt(rateLimitKey, maxAttempts: 15, window: const Duration(minutes: 1))) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Rate limit reached. Please wait before creating more notes.")),
+      );
+      return;
+    }
+    SecurityRateLimiter().recordAttempt(rateLimitKey);
+
+    try {
+      await supabase.from('notes').insert({
+        'user_uid': user.id,
+        'title': sanitizedTitle,
+        'content': sanitizedContent,
+      });
+      loadNotes();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to save note: ${SecurityConfig.getSafeErrorMessage(e)}")),
+        );
+      }
+    }
   }
 
   Future<void> deleteNote(dynamic noteId) async {
-    await supabase.from('notes').delete().eq('id', noteId);
-    loadNotes();
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      // Scoped deletion: only delete if the note belongs to the authenticated user
+      await supabase
+          .from('notes')
+          .delete()
+          .eq('id', noteId)
+          .eq('user_uid', user.id);
+      loadNotes();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to delete note: ${SecurityConfig.getSafeErrorMessage(e)}")),
+        );
+      }
+    }
   }
 
   void showAddNoteDialog() {
@@ -63,8 +123,10 @@ class _NotesPageState extends State<NotesPage> {
           children: [
             TextField(
               controller: titleCtrl,
+              maxLength: 100,
               decoration: InputDecoration(
                 hintText: "Title",
+                counterText: "",
                 filled: true,
                 fillColor: const Color(0xFFFAF7EB),
                 border: OutlineInputBorder(
@@ -77,8 +139,10 @@ class _NotesPageState extends State<NotesPage> {
             TextField(
               controller: contentCtrl,
               maxLines: 4,
+              maxLength: 2000,
               decoration: InputDecoration(
                 hintText: "Write your note...",
+                counterText: "",
                 filled: true,
                 fillColor: const Color(0xFFFAF7EB),
                 border: OutlineInputBorder(
@@ -100,7 +164,7 @@ class _NotesPageState extends State<NotesPage> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             ),
             onPressed: () {
-              if (titleCtrl.text.isNotEmpty) {
+              if (titleCtrl.text.trim().isNotEmpty) {
                 addNote(titleCtrl.text, contentCtrl.text);
                 Navigator.pop(context);
               }

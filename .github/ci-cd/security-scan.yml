@@ -1,0 +1,86 @@
+name: Security Hardening & Vulnerability Scan
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  schedule:
+    # Run a weekly automated security scan
+    - cron: '0 0 * * 0'
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  # Job 1: Secret Scanning to detect leaked API keys, tokens, or credentials
+  secret-scan:
+    name: Secret & Credential Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks Secret Scanner
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: "" # Optional for orgs
+
+      - name: Verify Sensitive Files Not Committed
+        run: |
+          echo "Verifying no .env files are tracked in git..."
+          if git ls-files | grep -E '^(\.env|\.env\.local)$'; then
+            echo "ERROR: Tracked sensitive environment file detected in repository!"
+            exit 1
+          fi
+          echo "Check passed: No live .env tracked."
+
+  # Job 2: Static Application Security Testing (SAST) & Code Analysis
+  sast-analysis:
+    name: Static Application Security Testing (SAST)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter & Dart SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Project Dependencies
+        run: flutter pub get
+
+      - name: Run Dart & Flutter Static Security Analyzer
+        run: flutter analyze --fatal-infos --fatal-warnings
+
+  # Job 3: Dependency Vulnerability & Supply Chain Scan
+  dependency-vulnerability-scan:
+    name: Dependency Vulnerability Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Run OSV-Scanner (Supply Chain & Known CVEs)
+        uses: google/osv-scanner-action@v1.9.0
+        with:
+          scan-args: |-
+            --lockfile=pubspec.lock
+            --recursive
+            ./
+
+      - name: Run Trivy Vulnerability Scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          ignore-unfixed: true
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'

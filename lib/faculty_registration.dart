@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'main.dart';
+import 'security/input_sanitizer.dart';
+import 'security/rate_limiter.dart';
+import 'security/security_config.dart';
 import 'faculty_home_page.dart';
 
 class FacultyRegisterPage extends StatefulWidget {
@@ -16,12 +19,14 @@ class _FacultyRegisterPageState extends State<FacultyRegisterPage> {
   final TextEditingController facultyName = TextEditingController();
   final TextEditingController facultyId = TextEditingController();
   final TextEditingController emailCtrl = TextEditingController();
+  final TextEditingController passwordCtrl = TextEditingController();
 
   String? selectedDepartment;
   String? selectedSubject;
   String? selectedSemester;
   File? _profileImage;
   bool _isRegistering = false;
+  bool _obscurePassword = true;
 
   final List<String> semesters = ["1", "2", "3", "4", "5", "6", "7", "8"];
 
@@ -118,7 +123,12 @@ class _FacultyRegisterPageState extends State<FacultyRegisterPage> {
   Future<String?> uploadPhoto(String uid) async {
     if (_profileImage == null) return null;
 
-    final fileExt = _profileImage!.path.split('.').last;
+    final fileExt = _profileImage!.path.split('.').last.toLowerCase();
+    // Validate image format
+    if (!['jpg', 'jpeg', 'png', 'webp'].contains(fileExt)) {
+      throw Exception('Invalid image format. Allowed formats: JPG, PNG, WEBP');
+    }
+
     final filePath = 'faculty/$uid.$fileExt';
 
     await supabase.storage
@@ -137,27 +147,55 @@ class _FacultyRegisterPageState extends State<FacultyRegisterPage> {
   }
 
   Future<void> registerFaculty() async {
-    if (facultyName.text.isEmpty ||
-        facultyId.text.isEmpty ||
+    final sanitizedName = InputSanitizer.sanitizeText(facultyName.text);
+    final validatedId = InputSanitizer.validateId(facultyId.text);
+    final validatedEmail = InputSanitizer.validateAndNormalizeEmail(emailCtrl.text);
+    final password = passwordCtrl.text;
+
+    if (sanitizedName.isEmpty ||
+        validatedId == null ||
+        validatedEmail == null ||
         selectedDepartment == null ||
         selectedSubject == null ||
         selectedSemester == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text("Please fill all fields")));
+      ).showSnackBar(const SnackBar(content: Text("Please fill all fields with valid information")));
       return;
     }
+
+    if (!InputSanitizer.isPasswordValid(password)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Password must be at least 6 characters long")),
+      );
+      return;
+    }
+
+    // Rate Limiting
+    final rateLimitKey = 'register:faculty:$validatedEmail';
+    if (!SecurityRateLimiter().canAttempt(rateLimitKey, maxAttempts: 3, lockoutDuration: const Duration(minutes: 2))) {
+      final remaining = SecurityRateLimiter().getRemainingLockoutSeconds(rateLimitKey);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Too many registration attempts. Please wait $remaining seconds."),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+    SecurityRateLimiter().recordAttempt(rateLimitKey);
 
     setState(() => _isRegistering = true);
 
     try {
-      final email = emailCtrl.text.trim();
-      const defaultPassword = "123456";
-
       final authResponse = await supabase.auth.signUp(
-        email: email,
-        password: defaultPassword,
+        email: validatedEmail,
+        password: password,
       );
+
+      if (authResponse.user == null) {
+        throw Exception("Registration failed. Please check your credentials.");
+      }
 
       final uid = authResponse.user!.id;
 
@@ -166,14 +204,17 @@ class _FacultyRegisterPageState extends State<FacultyRegisterPage> {
 
       await supabase.from('faculty').upsert({
         'uid': uid,
-        'faculty_name': facultyName.text.trim(),
-        'faculty_id': facultyId.text.trim(),
+        'faculty_name': sanitizedName,
+        'faculty_id': validatedId,
         'faculty_department': selectedDepartment,
         'subject': selectedSubject,
         'semester': selectedSemester,
-        'email': email,
+        'email': validatedEmail,
         'photo_url': photoUrl,
       });
+
+      // Reset rate limit on success
+      SecurityRateLimiter().reset(rateLimitKey);
 
       if (!mounted) return;
 
@@ -190,7 +231,7 @@ class _FacultyRegisterPageState extends State<FacultyRegisterPage> {
 
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text("Registration Failed: $e")));
+      ).showSnackBar(SnackBar(content: Text("Registration: ${SecurityConfig.getSafeErrorMessage(e)}")));
     } finally {
       if (mounted) setState(() => _isRegistering = false);
     }
@@ -242,7 +283,7 @@ class _FacultyRegisterPageState extends State<FacultyRegisterPage> {
               child: Column(
                 children: [
                   const Text(
-                    "Join the educator community. Register to manage your subjects and attendance.",
+                    "Welcome! Join Cusatify to manage your classes and students seamlessly.",
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.black45,
@@ -353,6 +394,8 @@ class _FacultyRegisterPageState extends State<FacultyRegisterPage> {
           const SizedBox(height: 20),
           buildTextField(Icons.email_rounded, "Gmail ID", emailCtrl),
           const SizedBox(height: 20),
+          buildPasswordField(),
+          const SizedBox(height: 20),
           buildDropdown(
             icon: Icons.account_balance_rounded,
             label: "Department",
@@ -377,6 +420,35 @@ class _FacultyRegisterPageState extends State<FacultyRegisterPage> {
             onChanged: (v) => setState(() => selectedSemester = v),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget buildPasswordField() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAF7EB),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.black.withOpacity(0.05)),
+      ),
+      child: TextField(
+        controller: passwordCtrl,
+        obscureText: _obscurePassword,
+        decoration: InputDecoration(
+          icon: const Icon(Icons.lock, color: Color(0xFF5D1F1E), size: 20),
+          hintText: "Password (min 6 characters)",
+          hintStyle: const TextStyle(fontSize: 14, color: Colors.black38),
+          border: InputBorder.none,
+          suffixIcon: IconButton(
+            icon: Icon(
+              _obscurePassword ? Icons.visibility_off : Icons.visibility,
+              color: Colors.black38,
+              size: 20,
+            ),
+            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+          ),
+        ),
       ),
     );
   }

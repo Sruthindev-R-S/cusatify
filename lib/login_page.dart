@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'main.dart';
+import 'security/input_sanitizer.dart';
+import 'security/rate_limiter.dart';
+import 'security/security_config.dart';
 import 'student_home_page.dart';
 import 'faculty_home_page.dart';
 
@@ -19,22 +22,50 @@ class _LoginPageState extends State<LoginPage> {
   bool obscurePassword = true;
 
   Future<void> login() async {
-    if (idCtrl.text.isEmpty || passwordCtrl.text.isEmpty) {
+    final rawEmail = idCtrl.text;
+    final password = passwordCtrl.text;
+
+    if (rawEmail.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please fill all fields")),
       );
       return;
     }
 
+    final normalizedEmail = InputSanitizer.validateAndNormalizeEmail(rawEmail);
+    if (normalizedEmail == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please enter a valid email address")),
+      );
+      return;
+    }
+
+    // Rate limiting / Brute-force protection
+    final rateLimitKey = 'login:$normalizedEmail';
+    if (!SecurityRateLimiter().canAttempt(rateLimitKey, maxAttempts: 5, lockoutDuration: const Duration(seconds: 30))) {
+      final remaining = SecurityRateLimiter().getRemainingLockoutSeconds(rateLimitKey);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Too many failed attempts. Locked out for $remaining seconds."),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    // Record this attempt
+    SecurityRateLimiter().recordAttempt(rateLimitKey);
+
     setState(() => loading = true);
 
     try {
-      final email = idCtrl.text.trim();
-
       await supabase.auth.signInWithPassword(
-        email: email,
-        password: passwordCtrl.text,
+        email: normalizedEmail,
+        password: password,
       );
+
+      // Successful login - reset rate limiting
+      SecurityRateLimiter().reset(rateLimitKey);
 
       if (!mounted) return;
 
@@ -69,7 +100,7 @@ class _LoginPageState extends State<LoginPage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Login Failed: $e")),
+        SnackBar(content: Text(SecurityConfig.getSafeErrorMessage(e))),
       );
     } finally {
       if (mounted) setState(() => loading = false);

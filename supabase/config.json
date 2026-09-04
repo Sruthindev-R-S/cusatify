@@ -1,0 +1,38 @@
+{
+  "$schema": "https://supabase.com/schemas/v1/config.json",
+  "project_id": "cusatify",
+  "api": {
+    "enabled": true,
+    "port": 54321,
+    "schemas": ["public", "storage", "graphql_public"],
+    "extra_search_path": ["public", "extensions"],
+    "max_rows": 1000
+  },
+  "auth": {
+    "enabled": true,
+    "site_url": "http://localhost:3000",
+    "additional_redirect_urls": ["https://cusatify.web.app"],
+    "jwt_expiry": 3600,
+    "enable_signup": true,
+    "rate_limit_token_refresh": 30,
+    "rate_limit_verify": 30,
+    "rate_limit_email_sent": 30
+  },
+  "cors": {
+    "allowed_origins": [
+      "http://localhost:3000",
+      "http://localhost:8080",
+      "https://cusatify.web.app"
+    ],
+    "allowed_methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    "allowed_headers": [
+      "authorization",
+      "x-client-info",
+      "apikey",
+      "content-type",
+      "x-connection-pool-size",
+      "x-request-retry-count"
+    ],
+    "max_age": 86400
+  }
+}

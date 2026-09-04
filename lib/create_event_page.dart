@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'main.dart';
+import 'security/input_sanitizer.dart';
+import 'security/rate_limiter.dart';
+import 'security/security_config.dart';
 
 class CreateEventPage extends StatefulWidget {
   const CreateEventPage({super.key});
@@ -39,46 +42,73 @@ class _CreateEventPageState extends State<CreateEventPage> {
   }
 
   Future<void> createEvent() async {
-    if (titleCtrl.text.isEmpty || selectedDate == null) {
+    final rawTitle = titleCtrl.text;
+    final sanitizedTitle = InputSanitizer.sanitizeText(rawTitle, maxLength: 120);
+    final sanitizedDesc = InputSanitizer.sanitizeText(descCtrl.text, maxLength: 1000);
+    final sanitizedVenue = InputSanitizer.sanitizeText(venueCtrl.text, maxLength: 100);
+
+    if (sanitizedTitle.isEmpty || selectedDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please fill title and select a date")),
       );
       return;
     }
 
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    // Rate limiting for event creation
+    final rateLimitKey = 'events:create:${user.id}';
+    if (!SecurityRateLimiter().canAttempt(rateLimitKey, maxAttempts: 5, window: const Duration(minutes: 1))) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Rate limit reached. Please wait before creating more events.")),
+      );
+      return;
+    }
+    SecurityRateLimiter().recordAttempt(rateLimitKey);
+
     setState(() => submitting = true);
 
-    final uid = supabase.auth.currentUser!.id;
-    final facultyData = await supabase
-        .from('faculty')
-        .select('faculty_name')
-        .eq('uid', uid)
-        .single();
-    final facultyName = facultyData['faculty_name'] ?? 'Faculty';
+    try {
+      final uid = user.id;
+      final facultyData = await supabase
+          .from('faculty')
+          .select('faculty_name')
+          .eq('uid', uid)
+          .maybeSingle();
+      final facultyName = facultyData != null ? (facultyData['faculty_name'] ?? 'Faculty') : 'Faculty';
 
-    final dateStr =
-        "${selectedDate!.year}-${selectedDate!.month.toString().padLeft(2, '0')}-${selectedDate!.day.toString().padLeft(2, '0')}";
-    final timeStr = selectedTime != null
-        ? "${selectedTime!.hour.toString().padLeft(2, '0')}:${selectedTime!.minute.toString().padLeft(2, '0')}"
-        : "";
+      final dateStr =
+          "${selectedDate!.year}-${selectedDate!.month.toString().padLeft(2, '0')}-${selectedDate!.day.toString().padLeft(2, '0')}";
+      final timeStr = selectedTime != null
+          ? "${selectedTime!.hour.toString().padLeft(2, '0')}:${selectedTime!.minute.toString().padLeft(2, '0')}"
+          : "";
 
-    await supabase.from('events').insert({
-      'title': titleCtrl.text,
-      'description': descCtrl.text,
-      'venue': venueCtrl.text,
-      'date': dateStr,
-      'time': timeStr,
-      'created_by': uid,
-      'created_by_name': facultyName,
-    });
+      await supabase.from('events').insert({
+        'title': sanitizedTitle,
+        'description': sanitizedDesc,
+        'venue': sanitizedVenue,
+        'date': dateStr,
+        'time': timeStr,
+        'created_by': uid,
+        'created_by_name': facultyName,
+      });
 
-    if (!mounted) return;
-    setState(() => submitting = false);
+      if (!mounted) return;
+      setState(() => submitting = false);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Event created successfully!")),
-    );
-    Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Event created successfully!")),
+      );
+      Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        setState(() => submitting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to create event: ${SecurityConfig.getSafeErrorMessage(e)}")),
+        );
+      }
+    }
   }
 
   @override
