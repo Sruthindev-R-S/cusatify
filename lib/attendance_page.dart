@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'main.dart';
+import 'security/rate_limiter.dart';
+import 'security/security_config.dart';
 
 class AttendancePage extends StatefulWidget {
   final String semester;
@@ -28,54 +30,85 @@ class _AttendancePageState extends State<AttendancePage> {
   }
 
   Future<void> loadStudents() async {
-    final result = await supabase
-        .from('students')
-        .select()
-        .eq('semester', widget.semester);
+    try {
+      final result = await supabase
+          .from('students')
+          .select()
+          .eq('semester', widget.semester);
 
-    if (mounted) {
-      setState(() {
-        students = (result as List)
-            .map((doc) => Map<String, dynamic>.from(doc))
-            .toList();
-        loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          students = (result as List)
+              .map((doc) => Map<String, dynamic>.from(doc))
+              .toList();
+          loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to load students: ${SecurityConfig.getSafeErrorMessage(e)}")),
+        );
+      }
     }
   }
 
   Future<void> submitAttendance() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    final rateLimitKey = 'attendance:submit:${user.id}';
+    if (!SecurityRateLimiter().canAttempt(rateLimitKey, maxAttempts: 10, window: const Duration(minutes: 1))) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please wait before submitting attendance again.")),
+      );
+      return;
+    }
+    SecurityRateLimiter().recordAttempt(rateLimitKey);
+
     setState(() => submitting = true);
 
-    final facultyUid = supabase.auth.currentUser!.id;
-    final now = DateTime.now();
-    final dateStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+    try {
+      final facultyUid = user.id;
+      final now = DateTime.now();
+      final dateStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
 
-    final records = students.map((student) => {
-      'subject': widget.facultySubject,
-      'semester': widget.semester,
-      'date': dateStr,
-      'student_uid': student['uid'],
-      'student_name': student['name'],
-      'student_id': student['student_id'],
-      'present': presentUids.contains(student['uid']),
-      'marked_by': facultyUid,
-    }).toList();
+      final records = students.map((student) => {
+        'subject': widget.facultySubject,
+        'semester': widget.semester,
+        'date': dateStr,
+        'student_uid': student['uid'],
+        'student_name': student['name'],
+        'student_id': student['student_id'],
+        'present': presentUids.contains(student['uid']),
+        'marked_by': facultyUid,
+        'faculty_uid': facultyUid,
+      }).toList();
 
-    await supabase.from('attendance').insert(records);
+      await supabase.from('attendance').insert(records);
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    setState(() => submitting = false);
+      setState(() => submitting = false);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          "Attendance submitted — ${presentUids.length}/${students.length} present",
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "Attendance submitted — ${presentUids.length}/${students.length} present",
+          ),
         ),
-      ),
-    );
+      );
 
-    Navigator.pop(context);
+      Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        setState(() => submitting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to submit attendance: ${SecurityConfig.getSafeErrorMessage(e)}")),
+        );
+      }
+    }
   }
 
   @override

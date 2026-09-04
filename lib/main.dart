@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'supabase_config.dart';
+import 'security/security_config.dart';
 import 'role_selection_page.dart';
 import 'student_home_page.dart';
 import 'faculty_home_page.dart';
@@ -8,9 +10,17 @@ import 'faculty_home_page.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Load .env configuration safely (fallback to build flags if missing)
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (_) {
+    // Graceful fallback for environments where .env is provided via compile-time flags
+  }
+
   await Supabase.initialize(
     url: supabaseUrl,
     anonKey: supabaseAnonKey,
+    headers: SecurityConfig.secureHeaders,
   );
 
   // Clear image cache to prevent PathNotFoundException with cached images

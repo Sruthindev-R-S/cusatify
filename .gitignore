@@ -50,9 +50,10 @@ ios/GoogleService-Info.plist
 
 # Environment variables
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 supabase/.env*
+supabase/.env*.local
 
 # Generated files
 lib/generated/
